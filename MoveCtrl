@@ -1,0 +1,552 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Ch_Move_Record : MonoBehaviour
+{
+    private int coll_Check = 0;
+    private float movespeed = 500;  //기본 이동속도
+    private float jumpForce = 250;  //점프 힘
+    private float dashSpeed = 200;  //대쉬 힘
+    private float wallDash = 120;   //벽점프 힘
+    private float chargeTime = 0;   //점프 딜레이 시간
+    private Rigidbody2D rigid;
+    private Vector2 vec;
+    private int movedir;
+    private int dash_Count;
+    
+    //Bool 변수값
+    private bool dashDelay = true;
+    private bool isRightWall = false;
+    private bool isLeftWall = false;
+    private bool isPoint = false;
+    private bool isJump = false;
+    private bool isWallJump = false;
+    private bool isColl = false;
+    private bool isStop = false;
+    private bool isWater = false;
+    private bool isMove = false;
+    private bool isCharge = false;
+
+    private bool input_ZDown = false;
+    private bool input_XDown = false;
+    private bool input_CDown = false;
+    private bool input_RArrowDown = false;
+    private bool input_LArrowDown = false;
+    private bool input_DArrowDown = false;
+    private bool input_UArrowDown = false;
+    private bool input_RArrowUp = false;
+    private bool input_LArrowUp = false;
+    private bool input_DArrowUp = false;
+    private bool input_UArrowUp = false;
+    public bool isSpider = false;
+    
+    public Vector2 spider_Point;
+    private bool gameEnd = false;
+    private Transform sprite;
+    private Transform effect;
+    private Transform sprite_eye;
+    private CameraCtrl_2_1 cam_Ctrl;
+
+    private void Awake()
+    {
+        rigid = this.GetComponent<Rigidbody2D>();
+        sprite = gameObject.transform.parent.Find("Sprite");
+        effect = gameObject.transform.parent.Find("Effect");
+        sprite_eye = gameObject.transform.parent.Find("Sprite_eye_1");
+        cam_Ctrl = GameObject.Find("Main Camera").GetComponent<CameraCtrl_2_1>();
+    }
+
+    private void Update()
+    {
+        //키보드 입력값을 받아서 리플레이에 적용하기위해 Input(Update)과 실행(FixedUpdate)을 따로 적용
+        if (Input.GetKeyDown(KeyCode.Z))
+            input_ZDown = true;
+        else if (Input.GetKeyUp(KeyCode.Z))
+            input_ZDown = false;
+        if (Input.GetKeyDown(KeyCode.X))
+            input_XDown = true;
+        else if(Input.GetKeyUp(KeyCode.X))
+            input_XDown = false;
+        if (Input.GetKeyDown(KeyCode.C))
+            input_CDown = true;
+        else if (Input.GetKeyUp(KeyCode.C))
+            input_CDown = false;
+
+        if (Input.GetKeyDown(KeyCode.RightArrow))
+        {
+            input_RArrowDown = true;
+            input_RArrowUp = false;
+        }
+        else if (Input.GetKeyDown(KeyCode.LeftArrow))
+        {
+            input_LArrowDown = true;
+            input_LArrowUp = false;
+        }
+        if (Input.GetKeyUp(KeyCode.RightArrow))
+        {
+            transform.GetChild(0).gameObject.SetActive(false);
+            input_RArrowDown = false;
+            input_RArrowUp = true;
+        }
+        else if (Input.GetKeyUp(KeyCode.LeftArrow))
+        {
+            transform.GetChild(0).gameObject.SetActive(false);
+            input_LArrowDown = false;
+            input_LArrowUp = true;
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        chargeDash1();
+
+        sprite.position = this.transform.position;
+        //effect.position = new Vector2(this.transform.position.x /*- 13.14f*/, this.transform.position.y /*+ 1.16f*/);
+        //sprite_eye.position = this.transform.position;
+
+        //점프
+        if (input_ZDown)
+            JumpMove();
+        else if (!input_ZDown)
+            isWallJump = false;
+
+        //이동
+        if (input_RArrowDown)
+        {
+            //this.transform.localScale = new Vector2(1, transform.localScale.y);
+            RightMove();
+        }
+
+        else if (input_LArrowDown)
+        {
+            //this.transform.localScale = new Vector2(-1, transform.localScale.y);
+            LeftMove();
+        }
+
+        else if (input_RArrowUp || input_LArrowUp)
+            NonMove();
+
+        //대쉬
+        if (input_LArrowDown || input_RArrowDown)
+            if (input_XDown)
+                DashMove();
+
+
+        if (isSpider && !gameEnd && !isStop)
+        {
+            rigid.velocity = Vector2.zero;
+            rigid.gravityScale = 0;
+            isPoint = true;
+        }
+
+        if (isPoint && !gameEnd && !isStop)
+        {
+            if (Vector2.Distance(transform.position, spider_Point) < 10.0f || isColl)
+            {
+                rigid.velocity = Vector2.zero;
+                rigid.gravityScale = 100;
+                isColl = false;
+                isPoint = false;
+                isSpider = false;
+                isJump = false;
+            }
+
+            else if (Vector2.Distance(transform.position, spider_Point) >= 1.0f && !isColl)
+            {
+                rigid.AddForce(new Vector2(spider_Point.x - transform.position.x, spider_Point.y - transform.position.y) * 5.0f, ForceMode2D.Impulse);
+            }
+        }
+    }
+
+    IEnumerator DashDelay()
+    {
+        dashDelay = false;
+        yield return new WaitForSeconds(0.7f);
+        dashDelay = true;
+    }
+
+    /*IEnumerator WallDelay()
+    {
+        yield return new WaitForSeconds(0.2f);
+        isWall = false;
+    }*/
+
+    IEnumerator GravityCtrl(Vector3 vec, float i)
+    {
+        rigid.gravityScale = 0;
+        rigid.velocity = Vector2.zero;
+        rigid.AddForce(vec * i, ForceMode2D.Impulse);
+        yield return new WaitForSeconds(0.2f);
+        rigid.gravityScale = 100;
+    }
+
+    private void OnCollisionEnter2D(Collision2D coll)
+    {
+        if (isSpider)
+        {
+            isColl = true;
+        }
+
+        if (coll.transform.tag == "Ground")
+        {
+            isJump = false;
+            dash_Count = 0;
+        }
+
+
+        else if (coll.transform.tag == "RightWall")
+        {
+            isRightWall = true;
+            rigid.velocity = Vector3.zero;
+            //Rigid.gravityScale = 50;
+        }
+
+        else if (coll.transform.tag == "LeftWall")
+        {
+            isLeftWall = true;
+            rigid.velocity = Vector3.zero;
+            //Rigid.gravityScale = 50;
+        }
+    }
+
+    private void OnCollisionStay2D(Collision2D coll)
+    {
+        if (movedir == 1 && coll.transform.tag == "RightWall")
+        {
+            rigid.gravityScale = 20;
+        }
+
+        else if (movedir == -1 && coll.transform.tag == "LeftWall")
+        {
+            rigid.gravityScale = 20;
+        }
+
+        else if (movedir != 1 && coll.transform.tag == "RightWall")
+            rigid.gravityScale = 100;
+
+
+        else if (movedir != 1 && coll.transform.tag == "LeftWall")
+            rigid.gravityScale = 100;
+    }
+
+
+    private void OnCollisionExit2D(Collision2D coll)
+    {
+        isColl = false;
+
+        if (isRightWall && coll.transform.tag == "RightWall")
+        {
+            rigid.gravityScale = 100;
+            isRightWall = false;
+        }
+
+        else if (isLeftWall && coll.transform.tag == "LeftWall")
+        {
+            rigid.gravityScale = 100;
+            isLeftWall = false;
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D coll)
+    {
+        //물
+        if (coll.transform.tag == "Water")
+        {
+            coll.gameObject.GetComponent<SpriteRenderer>().color = new Color(coll.gameObject.GetComponent<SpriteRenderer>().color.r,
+                                                                             coll.gameObject.GetComponent<SpriteRenderer>().color.g,
+                                                                             coll.gameObject.GetComponent<SpriteRenderer>().color.b, 0.3f);
+            movespeed = 100;
+            jumpForce = 30;
+            wallDash = 30;
+            isWater = true;
+        }
+
+        //가시
+        else if (coll.transform.tag == "Sharp")
+        {
+            rigid.velocity = Vector2.zero;
+            movespeed = 100;
+            jumpForce = 150;
+            wallDash = 30;
+        }
+
+        //움직임 방해 가시
+        else if (coll.transform.tag == "Sharp_Stop")
+        {
+            isStop = true;
+        }
+
+        //즉사 가시
+        else if (coll.transform.tag == "DeadSharp")
+        {
+            //게임종료
+            gameEnd = true;
+            rigid.velocity = Vector2.zero;
+            //GameObject.Find("Game_Ctrl").GetComponent<Game_Ctrl>().EndGame();
+            Debug.Log("죽는 가시");
+        }
+
+        //떨어지는 발판
+        else if (coll.transform.tag == "Drop_Stick")
+        {
+            isJump = false;
+            dash_Count = 0;
+        }
+
+        //트램펄린
+        else if (coll.transform.tag == "Trampoline")
+        {
+            rigid.AddForce(new Vector2(0, 1000), ForceMode2D.Impulse);
+            cam_Ctrl.Cam_Angle(true);
+        }
+
+        //종료
+        else if (coll.transform.tag == "End")
+            GameObject.Find("Game_Ctrl").GetComponent<Game_Ctrl>().ClearGame();
+    }
+
+    private void OnTriggerExit2D(Collider2D coll)
+    {
+        if (coll.transform.tag == "Water")
+        {
+            Debug.Log(2);
+            coll.gameObject.GetComponent<SpriteRenderer>().color = new Color(coll.gameObject.GetComponent<SpriteRenderer>().color.r,
+                                                                             coll.gameObject.GetComponent<SpriteRenderer>().color.g,
+                                                                             coll.gameObject.GetComponent<SpriteRenderer>().color.b, 1);
+            movespeed = 500;
+            jumpForce = 250;
+            wallDash = 120;
+            isWater = false;
+        }
+
+        else if (coll.transform.tag == "Sharp")
+        {
+            movespeed = 500;
+            jumpForce = 250;
+            wallDash = 120;
+        }
+
+        else if (coll.transform.tag == "Sharp_Stop")
+        {
+            isStop = false;
+        }
+    }
+
+    public void JumpMove()
+    {
+        input_ZDown = false;
+        if (!gameEnd && !isStop)
+        {
+            if (!isJump)
+            {
+                isJump = true;
+                rigid.AddForce(new Vector2(0, jumpForce), ForceMode2D.Impulse);
+            }
+
+            else if (isWater)
+            {
+                Debug.Log(1);
+                rigid.AddForce(new Vector2(0, jumpForce), ForceMode2D.Impulse);
+            }
+
+            if (!isWallJump)
+            {
+                
+                if (isRightWall)
+                {
+                    //transform.GetChild(0).localPosition = new Vector2(this.transform.position.x + 7.4f, 0);
+                    //transform.GetChild(0).gameObject.SetActive(true);
+                    //transform.GetChild(0).GetComponent<Animator>().SetTrigger("isWallJump");
+                    transform.parent.Find("Effect_Wall").localPosition = new Vector2(this.transform.localPosition.x + 7.4f, this.transform.localPosition.y);
+                    transform.parent.Find("Effect_Wall").localScale = new Vector2(10, 10);
+                    //transform.parent.Find("Effect_Wall").gameObject.SetActive(true);
+                    transform.parent.Find("Effect_Wall").GetComponent<Animator>().SetTrigger("isWallJump");
+                    rigid.velocity = Vector2.zero;
+                    dash_Count = 0;
+                    rigid.AddForce(new Vector2(-wallDash, jumpForce), ForceMode2D.Impulse);
+                    isWallJump = true;
+                }
+
+                else if (isLeftWall)
+                {
+                    //transform.GetChild(0).localPosition = new Vector2(this.transform.position.x-7.4f, 0);
+                    //transform.GetChild(0).gameObject.SetActive(true);
+                    //transform.GetChild(0).GetComponent<Animator>().SetTrigger("isWallJump");
+                    transform.parent.Find("Effect_Wall").localPosition = new Vector2(this.transform.localPosition.x - 7.4f, this.transform.localPosition.y);
+                    transform.parent.Find("Effect_Wall").localScale = new Vector2(-10, 10);
+                    //transform.parent.Find("Effect_Wall").gameObject.SetActive(true);
+                    transform.parent.Find("Effect_Wall").GetComponent<Animator>().SetTrigger("isWallJump");
+                    rigid.velocity = Vector2.zero;
+                    dash_Count = 0;
+                    rigid.AddForce(new Vector2(wallDash, jumpForce), ForceMode2D.Impulse);
+                    isWallJump = true;
+                }
+            }
+        }
+    }
+
+    public void RightMove()
+    {
+        if (!gameEnd && !isStop)
+            if (!isRightWall && !isSpider)
+            {
+                this.transform.localScale = new Vector2(1, transform.localScale.y);
+                transform.GetChild(0).localPosition = new Vector2(-10.1f, -1.3f);
+                transform.GetChild(0).gameObject.SetActive(true);
+                movedir = 1;
+                vec.Set(movespeed * movedir, 0);
+                //Rigid.AddTorque(-rotForce);
+                //this.transform.Rotate(0, 0, -10);
+                rigid.AddForce(vec);
+                sprite.Rotate(Vector3.forward, Time.deltaTime * -500.0f);
+                //sprite_eye.Rotate(Vector3.forward, Time.deltaTime * -500.0f);
+            }
+    }
+
+    public void LeftMove()
+    {
+        if (!gameEnd && !isStop)
+            if (!isLeftWall && !isSpider)
+            {
+                this.transform.localScale = new Vector2(-1, transform.localScale.y);
+                transform.GetChild(0).localPosition = new Vector2(-10.1f, -1.3f);
+                transform.GetChild(0).gameObject.SetActive(true);
+                movedir = -1;
+                vec.Set(movespeed * movedir, 0);
+                //Rigid.AddTorque(rotForce);
+                //this.transform.Rotate(0, 0, 10);
+                rigid.AddForce(vec);
+                sprite.Rotate(Vector3.forward, Time.deltaTime * 500.0f);
+                //sprite_eye.Rotate(Vector3.forward, Time.deltaTime * 500.0f);
+            }
+    }
+
+    public void NonMove()
+    {
+        movedir = 0;
+        //rigid.velocity = Vector2.zero;
+    }
+
+    public void DashMove()
+    {
+        if (!gameEnd && !isStop)
+            if (dashDelay)
+            {
+                //dashDelay = false;
+                //점프중 대쉬 카운트
+                if (isJump)
+                {
+                    if (dash_Count == 0)
+                    {
+                        dash_Count++;
+                        StartCoroutine(GravityCtrl(new Vector3(movedir * dashSpeed, 0), 1));
+                    }
+                }
+                else
+                    StartCoroutine(GravityCtrl(new Vector3(movedir * dashSpeed, 0), 1));
+
+                StartCoroutine(DashDelay());
+            }
+    }
+
+    private void chargeDash1()
+    {
+        chargeTime += Time.deltaTime;
+        if (chargeTime > 2.5f)
+            if (chargeTime > 2.5f)
+            {
+                isCharge = true;
+                this.transform.parent.transform.Find("Sprite").transform.localScale = new Vector3(15.08f, 15.08f);
+                //this.transform.parent.transform.Find("Sprite_eye").transform.localScale = new Vector3(15.08f, 15.08f);
+            }
+
+        if (Input.GetKeyDown(KeyCode.V))
+        {
+            if (isCharge)
+            {
+                //차지 대쉬 실행부분
+                if (Input.GetKey(KeyCode.UpArrow))
+                    vec = new Vector2(0, 1);
+
+                if (Input.GetKey(KeyCode.DownArrow))
+                    vec = new Vector2(0, -1);
+
+                if (Input.GetKey(KeyCode.RightArrow))
+                    vec = new Vector2(1, 0);
+
+                if (Input.GetKey(KeyCode.LeftArrow))
+                    vec = new Vector2(-1, 0);
+
+                if (Input.GetKey(KeyCode.UpArrow) && Input.GetKey(KeyCode.RightArrow))
+                    vec = new Vector2(1, 1);
+
+                if (Input.GetKey(KeyCode.UpArrow) && Input.GetKey(KeyCode.LeftArrow))
+                    vec = new Vector2(-1, 1);
+
+                if (Input.GetKey(KeyCode.DownArrow) && Input.GetKey(KeyCode.RightArrow))
+                    vec = new Vector2(1, -1);
+
+                if (Input.GetKey(KeyCode.DownArrow) && Input.GetKey(KeyCode.LeftArrow))
+                    vec = new Vector2(-1, -1);
+
+
+                StartCoroutine(GravityCtrl(vec, dashSpeed*1.5f));
+                isCharge = false;
+            }
+            this.transform.parent.transform.Find("Sprite").transform.localScale = new Vector3(11.6f, 11.6f);
+            //this.transform.parent.transform.Find("Sprite_eye").transform.localScale = new Vector3(11.6f, 11.6f);
+            chargeTime = 0;
+        }
+    }
+
+    private void chargeDash2()
+    {
+        if (Input.GetKey(KeyCode.V))
+        {
+            chargeTime += Time.deltaTime;
+            if (chargeTime > 2.5f)
+            {
+                isCharge = true;
+                this.transform.parent.transform.Find("Sprite").transform.localScale = new Vector3(1.3f, 1.3f);
+            }
+        }
+
+        if (Input.GetKeyUp(KeyCode.V))
+        {
+            if (isCharge)
+            {
+                //차지 대쉬 실행부분
+                if (Input.GetKey(KeyCode.UpArrow))
+                    vec = new Vector2(0, 1);
+
+                if (Input.GetKey(KeyCode.DownArrow))
+                    vec = new Vector2(0, -1);
+
+                if (Input.GetKey(KeyCode.RightArrow))
+                    vec = new Vector2(1, 0);
+
+                if (Input.GetKey(KeyCode.LeftArrow))
+                    vec = new Vector2(-1, 0);
+
+                if (Input.GetKey(KeyCode.UpArrow) && Input.GetKey(KeyCode.RightArrow))
+                    vec = new Vector2(1, 1);
+
+                if (Input.GetKey(KeyCode.UpArrow) && Input.GetKey(KeyCode.LeftArrow))
+                    vec = new Vector2(-1, 1);
+
+                if (Input.GetKey(KeyCode.DownArrow) && Input.GetKey(KeyCode.RightArrow))
+                    vec = new Vector2(1, -1);
+
+                if (Input.GetKey(KeyCode.DownArrow) && Input.GetKey(KeyCode.LeftArrow))
+                    vec = new Vector2(-1, -1);
+
+
+                StartCoroutine(GravityCtrl(vec, dashSpeed*1.5f));
+                isCharge = false;
+            }
+            this.transform.parent.transform.Find("Sprite").transform.localScale = new Vector3(1, 1);
+            chargeTime = 0;
+        }
+    }
+}
